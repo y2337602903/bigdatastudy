@@ -1,0 +1,111 @@
+-- 1.找出全部取得3连冠的队伍
+select team,count(*) wincount
+from ( 
+    select team,year,
+        year-row_number() over (partition by team order by year) as timediff
+    from t1
+) tt
+group by team,timediff
+having count(*)>2;
+
+-- 2.求出所有波峰波谷
+with info as (
+	select id,time,price, 
+		nvl(lag(price)over( partition by id order by time ),'0') lagprice,
+		nvl(lead(price)over( partition by id order by time ),'0') leadprice  
+	from t2
+)
+select 
+    id,time,price,
+    case 
+        when price>lagprice and price>leadprice
+        then '波峰'
+        when price<lagprice and price<leadprice
+        then '波谷'
+        else null end 
+        as feature
+from info 
+where (price>lagprice and price>leadprice)
+or (price<lagprice and price<leadprice);
+
+--3.1
+select id,
+        (
+            unix_timestamp(max(dt),'yyyy/MM/dd HH:mm')-
+            unix_timestamp(min(dt),'yyyy/MM/dd HH:mm')
+        )/60 as `浏览时长`,
+        count(*) as `步长`
+from t3 group by id
+
+--3.2
+select
+    xid `用户`,
+    sum(case when xbetweenmin > 30 then 0 else xbetweenmin end) `时长`,
+    count(*) `步长`
+from 
+(
+    select 
+        xid,
+        xbetweenmin,
+        xrownumer,
+        nvl(minrow,xcount) as minrow
+    from 
+    (
+            select 
+                count(*) over(partition  by id) xcount,
+                id xid,
+                dt xdt,
+                row_number() over (partition  by id order by dt )  xrownumer,
+                nvl(
+                (unix_timestamp(dt,'yyyy/MM/DD HH:mm')-
+                unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/DD HH:mm'))/60
+                ,0) as xbetweenmin
+            from t3
+    )x
+    left join (
+        select 
+            aid,
+			arownumer,
+			min(brownumer)-1 as minrow       
+        from 
+        (
+                select 
+                    count(*) over(partition  by id) acount,
+                    id aid,
+                    dt adt,
+                    row_number() over (partition  by id order by dt )  arownumer,
+                    nvl(
+                    (unix_timestamp(dt,'yyyy/MM/DD HH:mm')-
+                    unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/DD HH:mm'))/60
+                    ,0) as abetweenmin
+                from t3
+        )a
+        left join 
+        (
+            select  id bid,
+                    rownumer brownumer
+            from (
+                select
+                    id,
+                    dt,
+                    row_number() over (partition  by id order by dt )  rownumer,
+                    nvl(
+                    (unix_timestamp(dt,'yyyy/MM/DD HH:mm')-
+                    unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/DD HH:mm'))/60
+                    ,0) as betweenmin
+                from t3
+            ) a
+            where a.betweenmin>30
+        ) b
+        on a.aid=b.bid
+        where brownumer is not null 
+        and   arownumer<brownumer
+        group by aid,arownumer
+    ) y
+    on x.xid=y.aid
+    and x.xrownumer=y.arownumer
+) tt
+group by xid,minrow
+
+
+	
