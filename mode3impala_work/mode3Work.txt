@@ -1,0 +1,60 @@
+-- 查询出所有相差30分钟的记录
+select  id,
+        dt,
+        case when a.betweenmin>30 then 1 else 0 end as num
+from (
+    select
+            id,
+            dt,
+            nvl(
+            (unix_timestamp(dt,'yyyy/MM/dd HH:mm')-
+            unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/dd HH:mm'))/60
+            ,0) as betweenmin
+        from t3
+) a;
+
+--第一行加到当前行的num实现不同次数num不同
+select id,
+        dt,
+        sum(num) over(partition by id order by dt rows between unbounded preceding  and current row  )
+  from (      
+    select  id,
+            dt,
+            case when a.betweenmin>30 then 1 else 0 end as num
+    from (
+        select
+                id,
+                dt,
+                nvl(
+                (unix_timestamp(dt,'yyyy/MM/dd HH:mm')-
+                unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/dd HH:mm'))/60
+                ,0) as betweenmin
+            from t3
+    ) a
+)b;
+
+--根据id,num排名
+select 
+    id,
+    dt,
+    rank() over (partition by id,num order by dt)
+from (
+    select id,
+            dt,
+            sum(num) over(partition by id order by dt rows between unbounded preceding  and current row  ) as num
+      from (      
+        select  id,
+                dt,
+                case when a.betweenmin>30 then 1 else 0 end as num
+        from (
+            select
+                    id,
+                    dt,
+                    nvl(
+                    (unix_timestamp(dt,'yyyy/MM/dd HH:mm')-
+                    unix_timestamp(lag(dt) over( partition by id order by dt ),'yyyy/MM/dd HH:mm'))/60
+                    ,0) as betweenmin
+                from t3
+        ) a
+    )b
+)c;
